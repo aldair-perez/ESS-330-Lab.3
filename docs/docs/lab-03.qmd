@@ -1,0 +1,224 @@
+---
+title: "Lab-03"
+subtitle: ESS-330
+author: 
+ - name: "Aldair Perez"
+   email: "aldairperez864@gmail.com"
+format: html
+---
+
+# Q1
+> https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv
+
+# Q2
+> data = read_csv('https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv')
+
+> my.date <- as.Date("2022-02-01")
+
+> my.state <- "Colorado"
+
+> colorado_data <- data %>% 
+  filter(state == "Colorado")
+
+> colorado_data <- colorado_data %>%
+  group_by(county) %>%
+  arrange(county, date) %>% 
+  mutate(
+    daily_new_cases = cases - lag(cases, default = 0), 
+    daily_new_deaths = deaths - lag(deaths, default = 0)  
+  ) %>%
+  ungroup()
+
+> head(colorado_data)
+
+> my.date <- Sys.Date()
+
+> cumulative_cases_table <- colorado_data %>%
+  group_by(county) %>%
+  summarise(total_cases = max(cases, na.rm = TRUE)) %>%  
+  arrange(desc(total_cases)) %>%
+  head(5)
+
+> print(cumulative_cases_table)
+
+> new_cases_data <- colorado_data %>%
+     filter(date == my.date)
+
+> new_cases_table <- colorado_data %>%
+     group_by(county) %>%
+     summarise(new_cases = sum(daily_new_cases, na.rm = TRUE)) %>%
+     arrange(desc(new_cases)) %>%
+     head(5)
+
+# Q3
+> pop_url <- 'https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/counties/totals/co-est2023-alldata.csv'
+
+> population_data <- read.csv(pop_url)
+
+> population_data <- population_data %>%
+     mutate(
+         STATE_FIP = sprintf("%02d", STATE),
+         COUNTY_FIP = sprintf("%03d", COUNTY),
+         FIP = paste(STATE_FIP, COUNTY_FIP, sep = ""))
+     
+> population_data_filtered <- population_data %>%
+     select(contains("NAME") | contains("2021")) %>%
+     filter('COUNTY_FIP' == "000")
+
+The structure of the filtered data is 18 columns. 2 are characters, 6 are numeric, and 10 are integers. The names have shortened words and not spaces.
+
+> colorado_data <- population_data %>%
+     filter(STNAME == "Colorado")
+
+> population_range <- range(colorado_data$POPESTIMATE2021, na.rm = TRUE
+
+The population range in Colorado in 2021 is 5810855.
+
+> population_data <- population_data %>%
+     mutate(
+         STATE = sprintf("%02d", STATE),
+         COUNTY = sprintf("%03d", COUNTY),
+         fips = paste0(STATE, COUNTY)
+     )
+
+> combined_data <- left_join(colorado_data, population_data, by = "fips")
+
+> combined_data <- combined_data %>%
+     mutate(
+         per_capita_cumulative_cases = cases / POPESTIMATE2021,
+         per_capita_new_cases = daily_new_cases / POPESTIMATE2021,
+         per_capita_new_deaths = daily_new_deaths / POPESTIMATE2021
+     )
+
+> top_5_cumulative_cases <- combined_data %>%
+     arrange(desc(per_capita_cumulative_cases)) %>%
+     select(fips, county, per_capita_cumulative_cases) %>%
+     slice_head(n = 5)
+     
+> top_5_new_cases <- combined_data %>%
+     arrange(desc(per_capita_new_cases)) %>%
+     select(fips, county, per_capita_new_cases) %>%
+     slice_head(n = 5)
+
+The top 5 counties for cumulative data per capita is Crowley. The top 5 counties for new cases per data are Lincoln, Crowley, Bent, Pitkin, and Crowley.
+
+# Q4
+> latest_date <- max(combined_data$date)
+
+> last_14_days_data <- combined_data %>%
+     filter(date >= (latest_date - 14))
+
+> county_summary <- last_14_days_data %>%
+     group_by(county) %>%
+     summarize(
+         total_new_cases = sum(daily_new_cases, na.rm = TRUE),
+         population = unique(POPESTIMATE2022),
+         new_cases_per_100k = (total_new_cases / POPESTIMATE2022) * 100000
+     )
+
+> top_5_counties <- county_summary %>%
+     arrange(desc(new_cases_per_100k)) %>%
+     head(5)
+
+> print(top_5_counties)
+
+The top 5 counties are all Mineral. 
+
+> watch_list_counties <- county_summary %>%
+     filter(new_cases_per_100k > 100)
+
+> print(paste("Number of counties meeting the watch list condition:", nrow(watch_list_counties)))
+
+The number of counties meeting the conditions are 825.
+
+#Q5
+
+> covid_deaths_2021 <- combined_data %>%
+     filter(format(date, "%Y") == "2021") %>%
+     group_by(county) %>%
+     summarize(total_covid_deaths = sum(daily_new_deaths, na.rm = TRUE))
+
+> county_deaths <- combined_data %>%
+     select(county, DEATHS2021) %>%
+     distinct() %>%
+     left_join(covid_deaths_2021, by = "county") %>%
+     mutate(covid_death_percentage = (total_covid_deaths / DEATHS2021) * 100)
+
+> high_covid_death_counties <- county_deaths %>%
+     filter(covid_death_percentage >= 20)
+
+> ggplot(high_covid_death_counties, aes(x = reorder(county, covid_death_percentage), y = covid_death_percentage)) +
+     geom_bar(stat = "identity", fill = "skyblue") +
+     coord_flip() +
+     labs(
+         title = "Counties Where COVID Deaths Account for 20% or More of Annual Deaths (2021)",
+         x = "County",
+         y = "COVID Deaths Percentage of Total Deaths"
+     ) +
+     theme_minimal()
+
+The counties with the highest COVID deaths for 20% or more are Conejos, Bent, San Miguel, Costilla, Otero, Custer, Crowley, Washington, Montrose, Fremont, and Dolores.
+
+# Q6
+> state_data <- combined_data %>%
+     group_by(state) %>%
+     arrange(state, date) %>%
+     mutate(
+         daily_new_cases = c(NA, diff(cases)),
+         rolling_7_day_cases = rollmean(daily_new_cases, 7, fill = NA, align = "right")
+     ) %>%
+     ungroup()
+
+> states_of_interest <- c("New York", "Colorado", "Alabama", "Ohio")
+
+> filtered_data <- state_data %>%
+     filter(state %in% states_of_interest)
+
+> ggplot(filtered_data, aes(x = date)) +
+     geom_line(aes(y = daily_new_cases, color = "Daily New Cases"), size = 1) +
+     geom_line(aes(y = rolling_7_day_cases, color = "7-Day Rolling Mean"), size = 1) +
+     facet_wrap(~ state, scales = "free_y") +
+     labs(
+         title = "Daily New Cases and 7-Day Rolling Mean of New Cases by State",
+         x = "Date",
+         y = "Number of New Cases",
+         color = "Legend"
+     ) +
+     theme_minimal()
+
+The daily new cases are bigger than the 7-day rolling mean, according to the graph made with the above command. 
+
+> state_data_with_population <- state_data %>%
+     left_join(population_data, by = c("state" = "STATE"))
+
+> state_data_with_population <- state_data_with_population %>%
+     mutate(
+         daily_new_cases = as.numeric(daily_new_cases),
+         population = as.numeric(POPESTIMATE2023.x),
+         new_cases_per_capita = daily_new_cases / POPESTIMATE2023.x
+     )
+
+> state_data_with_population <- state_data_with_population %>%
+     arrange(state, date) %>%  
+     group_by(state) %>%
+     mutate(
+         rolling_mean_7_day = rollapply(
+             new_cases_per_capita, 
+             width = 7, 
+             FUN = mean, 
+             align = "right", 
+             fill = NA
+         )
+     ) %>%
+     ungroup()
+
+> ggplot(state_data_with_population, aes(x = date, y = new_cases_per_capita, color = state)) +
+     geom_line() +
+     geom_line(aes(y = rolling_mean_7_day), linetype = "dashed", size = 1.2) +
+     labs(
+         title = "New Cases per Capita and 7-Day Rolling Mean by State",
+         x = "Date",
+         y = "New Cases per Capita",
+         color = "State"
+     ) +
+     theme_minimal()
